@@ -98,12 +98,6 @@ function parseBody(req) {
   });
 }
 
-function requestOrigin(req) {
-  const origin = String(req.headers.origin || '').trim();
-  if (origin) return origin.replace(/\/$/, '') + '/';
-  return SITE_URL;
-}
-
 function mailMessage(fields) {
   const fromName = String(fields.name).replace(/"/g, '');
   const { text, html } = emailBodies(fields);
@@ -184,74 +178,28 @@ function emailBodies(fields) {
   return { text, html };
 }
 
-async function sendViaStudioRelay(fields) {
-  const relays = [
-    { host: 'smtp.hostinger.com', port: 465, secure: true },
-    { host: 'smtp.hostinger.com', port: 587, secure: false, requireTLS: true },
-  ];
-  const message = mailMessage(fields);
-  for (let i = 0; i < relays.length; i++) {
-    try {
-      const transport = nodemailer.createTransport({
-        host: relays[i].host,
-        port: relays[i].port,
-        secure: relays[i].secure,
-        requireTLS: Boolean(relays[i].requireTLS),
-        tls: { servername: relays[i].host },
-        connectionTimeout: 8000,
-        greetingTimeout: 8000,
-        socketTimeout: 8000,
-      });
-      await transport.sendMail(message);
-      return true;
-    } catch (err) {
-      console.error('Studio relay failed:', relays[i].port, err && err.responseCode ? err.responseCode : err && err.code);
-    }
-  }
-  return false;
-}
-
-function acceptedMailResponse(status, data, raw) {
-  if (data && (data.ok === true || data.success === true || data.success === 'true')) return true;
-  const text = String((data && (data.message || data.error)) || raw || '').toLowerCase();
-  if (text.indexOf('activat') !== -1 || text.indexOf('thank') !== -1) return true;
-  return status >= 200 && status < 300 && Boolean(raw);
-}
-
-async function sendToMailbox(fields, origin) {
-  const page = origin && origin.indexOf('inkspilled.com') !== -1 ? origin : SITE_URL;
-  const payload = {
-    Name: fields.name,
-    'Visitor email': fields.email,
-    Phone: fields.phone,
-    Service: fields.service,
-    Message: fields.message,
-    _subject: 'New Inkspilled form submission from ' + fields.name,
-    _template: 'basic',
-    _captcha: 'false',
-    _replyto: fields.email,
-  };
+async function sendWithSmtp(fields) {
+  const pass = process.env.SMTP_PASS;
+  if (!pass) return false;
+  const user = process.env.SMTP_USER || MAIL_TO;
   try {
-    const response = await fetch('https://formsubmit.co/ajax/' + encodeURIComponent(MAIL_TO), {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        Origin: page.replace(/\/$/, ''),
-        Referer: page,
-      },
-      body: JSON.stringify(payload),
+    const transport = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtp.office365.com',
+      port: Number(process.env.SMTP_PORT || 587),
+      secure: false,
+      requireTLS: true,
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 8000,
+      auth: { user: user, pass: pass },
     });
-    const raw = await response.text();
-    let data = null;
-    try {
-      data = raw ? JSON.parse(raw) : null;
-    } catch {
-      data = null;
-    }
-    return acceptedMailResponse(response.status, data, raw);
+    const message = mailMessage(fields);
+    message.from = '"Inkspilled" <' + user + '>';
+    message.envelope = { from: user, to: MAIL_TO };
+    await transport.sendMail(message);
+    return true;
   } catch (err) {
-    console.error('Mailbox delivery failed');
+    console.error('SMTP failed:', err && err.code ? err.code : 'SEND');
     return false;
   }
 }
@@ -297,8 +245,7 @@ module.exports = async function handler(req, res) {
   }
 
   const fields = { name: name, email: email, phone: phone, service: service, message: message };
-  const origin = requestOrigin(req);
-  const delivered = (await sendViaStudioRelay(fields)) || (await sendToMailbox(fields, origin));
+  const delivered = await sendWithSmtp(fields);
 
   if (!delivered) {
     json(res, 500, { ok: false, error: 'Could not send. Please try again in a moment.' });
