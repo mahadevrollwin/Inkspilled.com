@@ -1,10 +1,4 @@
 const MAIL_TO = 'navneetsingh@inkspilled.in';
-const MAIL_FROM_CANDIDATES = [
-  'Inkspilled <navneetsingh@inkspilled.in>',
-  'Inkspilled <navneetsingh@inkspilled.com>',
-  'Inkspilled <hello@inkspilled.com>',
-  'Inkspilled <onboarding@resend.dev>',
-];
 const SITE_URL = 'https://www.inkspilled.com/';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_SHORT = 120;
@@ -168,6 +162,61 @@ function emailBodies(fields) {
   return { text, html };
 }
 
+async function resendRequest(apiKey, path, options) {
+  const response = await fetch('https://api.resend.com' + path, {
+    method: options.method || 'GET',
+    headers: {
+      Authorization: 'Bearer ' + apiKey,
+      'Content-Type': 'application/json',
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+  const raw = await response.text();
+  let data = null;
+  try {
+    data = raw ? JSON.parse(raw) : null;
+  } catch {
+    data = null;
+  }
+  return { ok: response.ok, status: response.status, data: data };
+}
+
+function fromForDomain(domain) {
+  const local = domain === 'inkspilled.in' ? 'navneetsingh' : 'hello';
+  return 'Inkspilled <' + local + '@' + domain + '>';
+}
+
+async function pickFromAddress(apiKey) {
+  if (process.env.RESEND_FROM) return [process.env.RESEND_FROM];
+
+  const listed = await resendRequest(apiKey, '/domains', { method: 'GET' });
+  const domains = (listed.data && listed.data.data) || [];
+  const verified = domains
+    .filter(function (domain) {
+      return domain && (domain.status === 'verified' || domain.status === 'partially_verified');
+    })
+    .map(function (domain) {
+      return domain.name;
+    });
+
+  const preferred = ['inkspilled.com', 'inkspilled.in'];
+  const ordered = preferred
+    .filter(function (name) {
+      return verified.indexOf(name) !== -1;
+    })
+    .concat(
+      verified.filter(function (name) {
+        return preferred.indexOf(name) === -1;
+      })
+    );
+
+  if (ordered.length) {
+    return ordered.map(fromForDomain);
+  }
+
+  return ['Inkspilled <hello@inkspilled.com>', 'Inkspilled <navneetsingh@inkspilled.com>'];
+}
+
 async function sendWithResend(fields) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
@@ -176,33 +225,26 @@ async function sendWithResend(fields) {
   }
 
   const { text, html } = emailBodies(fields);
+  const fromAddresses = await pickFromAddress(apiKey);
   const payload = {
     to: [MAIL_TO],
     reply_to: fields.email,
     subject: 'New Inkspilled form submission from ' + fields.name,
     text: text,
     html: html,
+    headers: {
+      'X-Entity-Ref-ID': Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+    },
   };
 
-  for (let i = 0; i < MAIL_FROM_CANDIDATES.length; i++) {
+  for (let i = 0; i < fromAddresses.length; i++) {
     try {
-      const response = await fetch('https://api.resend.com/emails', {
+      const result = await resendRequest(apiKey, '/emails', {
         method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + apiKey,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(Object.assign({ from: MAIL_FROM_CANDIDATES[i] }, payload)),
+        body: Object.assign({ from: fromAddresses[i] }, payload),
       });
-      const raw = await response.text();
-      let data = null;
-      try {
-        data = raw ? JSON.parse(raw) : null;
-      } catch {
-        data = null;
-      }
-      if (response.ok && data && data.id) return true;
-      console.error('Resend failed:', response.status, data && data.name ? data.name : '');
+      if (result.ok && result.data && result.data.id) return true;
+      console.error('Resend failed:', result.status, result.data && result.data.name ? result.data.name : '');
     } catch (err) {
       console.error('Resend request failed');
     }
