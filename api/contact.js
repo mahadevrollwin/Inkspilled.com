@@ -1,5 +1,8 @@
 const MAIL_TO = 'navneetsingh@inkspilled.in';
-const MAIL_FROM = 'Inkspilled <navneetsingh@inkspilled.in>';
+const MAIL_FROM_CANDIDATES = [
+  'Inkspilled <navneetsingh@inkspilled.in>',
+  'Inkspilled <navneetsingh@inkspilled.com>',
+];
 const SITE_URL = 'https://www.inkspilled.com/';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_SHORT = 120;
@@ -170,41 +173,39 @@ async function sendWithResend(fields) {
     return false;
   }
 
-  const fromName = String(fields.name).replace(/"/g, '');
   const { text, html } = emailBodies(fields);
+  const payload = {
+    to: [MAIL_TO],
+    reply_to: fields.email,
+    subject: 'New Inkspilled form submission from ' + fields.name,
+    text: text,
+    html: html,
+  };
 
-  try {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer ' + apiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: MAIL_FROM,
-        to: [MAIL_TO],
-        reply_to: fromName + ' <' + fields.email + '>',
-        subject: 'New Inkspilled form submission from ' + fields.name,
-        text: text,
-        html: html,
-      }),
-    });
-    const raw = await response.text();
-    let data = null;
+  for (let i = 0; i < MAIL_FROM_CANDIDATES.length; i++) {
     try {
-      data = raw ? JSON.parse(raw) : null;
-    } catch {
-      data = null;
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + apiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(Object.assign({ from: MAIL_FROM_CANDIDATES[i] }, payload)),
+      });
+      const raw = await response.text();
+      let data = null;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        data = null;
+      }
+      if (response.ok && data && data.id) return true;
+      console.error('Resend failed:', response.status, data && data.name ? data.name : '');
+    } catch (err) {
+      console.error('Resend request failed');
     }
-    if (!response.ok || (data && data.message && !data.id)) {
-      console.error('Resend failed:', response.status);
-      return false;
-    }
-    return Boolean(data && data.id);
-  } catch (err) {
-    console.error('Resend request failed');
-    return false;
   }
+  return false;
 }
 
 module.exports = async function handler(req, res) {
