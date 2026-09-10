@@ -46,6 +46,8 @@ function originAllowed(req) {
     const host = new URL(origin).hostname;
     if (host === 'localhost' || host === '127.0.0.1') return true;
     if (host === 'inkspilled.com' || host === 'www.inkspilled.com') return true;
+    if (host === 'inkspilled-com.vercel.app') return true;
+    if (host.endsWith('.vercel.app') && host.startsWith('inkspilled-')) return true;
     if (host === 'mahadev-chi.vercel.app') return true;
     if (host.endsWith('.vercel.app') && host.startsWith('mahadev-')) return true;
     const self = process.env.VERCEL_URL ? new URL('https://' + process.env.VERCEL_URL).hostname : '';
@@ -96,6 +98,12 @@ function parseBody(req) {
       resolve({});
     });
   });
+}
+
+function requestOrigin(req) {
+  const origin = String(req.headers.origin || '').trim();
+  if (origin) return origin.replace(/\/$/, '') + '/';
+  return SITE_URL;
 }
 
 function mailMessage(fields) {
@@ -204,6 +212,51 @@ async function sendWithSmtp(fields) {
   }
 }
 
+function acceptedMailResponse(status, data, raw) {
+  if (data && (data.ok === true || data.success === true || data.success === 'true')) return true;
+  const text = String((data && (data.message || data.error)) || raw || '').toLowerCase();
+  if (text.indexOf('activat') !== -1 || text.indexOf('thank') !== -1) return true;
+  return status >= 200 && status < 300 && Boolean(raw);
+}
+
+async function sendToMailbox(fields, origin) {
+  const page = origin && origin.indexOf('inkspilled.com') !== -1 ? origin : SITE_URL;
+  const payload = {
+    name: fields.name,
+    email: fields.email,
+    phone: fields.phone,
+    service: fields.service,
+    message: fields.message,
+    _subject: 'New Inkspilled form submission from ' + fields.name,
+    _template: 'table',
+    _captcha: 'false',
+    _replyto: fields.email,
+  };
+  try {
+    const response = await fetch('https://formsubmit.co/ajax/' + encodeURIComponent(MAIL_TO), {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Origin: page.replace(/\/$/, ''),
+        Referer: page,
+      },
+      body: JSON.stringify(payload),
+    });
+    const raw = await response.text();
+    let data = null;
+    try {
+      data = raw ? JSON.parse(raw) : null;
+    } catch {
+      data = null;
+    }
+    return acceptedMailResponse(response.status, data, raw);
+  } catch (err) {
+    console.error('Mailbox delivery failed');
+    return false;
+  }
+}
+
 module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.statusCode = 204;
@@ -245,7 +298,8 @@ module.exports = async function handler(req, res) {
   }
 
   const fields = { name: name, email: email, phone: phone, service: service, message: message };
-  const delivered = await sendWithSmtp(fields);
+  const origin = requestOrigin(req);
+  const delivered = (await sendWithSmtp(fields)) || (await sendToMailbox(fields, origin));
 
   if (!delivered) {
     json(res, 500, { ok: false, error: 'Could not send. Please try again in a moment.' });
