@@ -2,6 +2,8 @@ const MAIL_TO = 'navneetsingh@inkspilled.in';
 const MAIL_FROM_CANDIDATES = [
   'Inkspilled <navneetsingh@inkspilled.in>',
   'Inkspilled <navneetsingh@inkspilled.com>',
+  'Inkspilled <hello@inkspilled.com>',
+  'Inkspilled <onboarding@resend.dev>',
 ];
 const SITE_URL = 'https://www.inkspilled.com/';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
