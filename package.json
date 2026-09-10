@@ -1,7 +1,4 @@
 {
   "name": "ink-international",
-  "private": true,
-  "dependencies": {
-    "nodemailer": "^6.10.1"
-  }
+  "private": true
 }

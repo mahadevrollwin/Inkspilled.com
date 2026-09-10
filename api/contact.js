@@ -1,6 +1,5 @@
-const nodemailer = require('nodemailer');
-
 const MAIL_TO = 'navneetsingh@inkspilled.in';
+const MAIL_FROM = 'Inkspilled <navneetsingh@inkspilled.in>';
 const SITE_URL = 'https://www.inkspilled.com/';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_SHORT = 120;
@@ -100,44 +99,22 @@ function parseBody(req) {
   });
 }
 
-function requestOrigin(req) {
-  const origin = String(req.headers.origin || '').trim();
-  if (origin) return origin.replace(/\/$/, '') + '/';
-  return SITE_URL;
-}
-
-function mailMessage(fields) {
-  const fromName = String(fields.name).replace(/"/g, '');
-  const { text, html } = emailBodies(fields);
-  return {
-    from: '"Inkspilled" <' + MAIL_TO + '>',
-    to: MAIL_TO,
-    replyTo: '"' + fromName + '" <' + fields.email + '>',
-    subject: 'New Inkspilled form submission from ' + fields.name,
-    text,
-    html,
-    headers: {
-      'X-Mailer': 'Inkspilled',
-      'X-Priority': '3',
-    },
-    envelope: { from: MAIL_TO, to: MAIL_TO },
-  };
-}
-
 function emailBodies(fields) {
   const rows = [
     ['Name', fields.name],
     ['Email', fields.email],
-    ['Phone', fields.phone || '—'],
+    ['Mobile Number', fields.phone || '—'],
     ['Service', fields.service || '—'],
-    ['Message', fields.message || '—'],
+    ['Project Description', fields.message || '—'],
   ];
   const text = [
     'Someone just submitted your form on ' + SITE_URL,
     '',
-    rows.map(function (row) {
-      return row[0] + ': ' + row[1];
-    }).join('\n'),
+    rows
+      .map(function (row) {
+        return row[0] + ': ' + row[1];
+      })
+      .join('\n'),
     '',
     'Reply directly to this email to contact the sender.',
     'Inkspilled · Delhi · Dubai · ' + SITE_URL,
@@ -186,62 +163,31 @@ function emailBodies(fields) {
   return { text, html };
 }
 
-async function sendWithSmtp(fields) {
-  const pass = process.env.SMTP_PASS;
-  if (!pass) return false;
-  const user = process.env.SMTP_USER || MAIL_TO;
-  try {
-    const transport = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.office365.com',
-      port: Number(process.env.SMTP_PORT || 587),
-      secure: false,
-      requireTLS: true,
-      connectionTimeout: 8000,
-      greetingTimeout: 8000,
-      socketTimeout: 8000,
-      auth: { user: user, pass: pass },
-    });
-    const message = mailMessage(fields);
-    message.from = '"Inkspilled" <' + user + '>';
-    message.envelope = { from: user, to: MAIL_TO };
-    await transport.sendMail(message);
-    return true;
-  } catch (err) {
-    console.error('SMTP failed:', err && err.code ? err.code : 'SEND');
+async function sendWithResend(fields) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    console.error('Resend is not configured');
     return false;
   }
-}
 
-function acceptedMailResponse(status, data, raw) {
-  if (data && (data.ok === true || data.success === true || data.success === 'true')) return true;
-  const text = String((data && (data.message || data.error)) || raw || '').toLowerCase();
-  if (text.indexOf('activat') !== -1 || text.indexOf('thank') !== -1) return true;
-  return status >= 200 && status < 300 && Boolean(raw);
-}
+  const fromName = String(fields.name).replace(/"/g, '');
+  const { text, html } = emailBodies(fields);
 
-async function sendToMailbox(fields, origin) {
-  const page = origin && origin.indexOf('inkspilled.com') !== -1 ? origin : SITE_URL;
-  const payload = {
-    name: fields.name,
-    email: fields.email,
-    phone: fields.phone,
-    service: fields.service,
-    message: fields.message,
-    _subject: 'New Inkspilled form submission from ' + fields.name,
-    _template: 'table',
-    _captcha: 'false',
-    _replyto: fields.email,
-  };
   try {
-    const response = await fetch('https://formsubmit.co/ajax/' + encodeURIComponent(MAIL_TO), {
+    const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
-        Accept: 'application/json',
+        Authorization: 'Bearer ' + apiKey,
         'Content-Type': 'application/json',
-        Origin: page.replace(/\/$/, ''),
-        Referer: page,
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        from: MAIL_FROM,
+        to: [MAIL_TO],
+        reply_to: fromName + ' <' + fields.email + '>',
+        subject: 'New Inkspilled form submission from ' + fields.name,
+        text: text,
+        html: html,
+      }),
     });
     const raw = await response.text();
     let data = null;
@@ -250,9 +196,13 @@ async function sendToMailbox(fields, origin) {
     } catch {
       data = null;
     }
-    return acceptedMailResponse(response.status, data, raw);
+    if (!response.ok || (data && data.message && !data.id)) {
+      console.error('Resend failed:', response.status);
+      return false;
+    }
+    return Boolean(data && data.id);
   } catch (err) {
-    console.error('Mailbox delivery failed');
+    console.error('Resend request failed');
     return false;
   }
 }
@@ -297,9 +247,13 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const fields = { name: name, email: email, phone: phone, service: service, message: message };
-  const origin = requestOrigin(req);
-  const delivered = (await sendWithSmtp(fields)) || (await sendToMailbox(fields, origin));
+  const delivered = await sendWithResend({
+    name: name,
+    email: email,
+    phone: phone,
+    service: service,
+    message: message,
+  });
 
   if (!delivered) {
     json(res, 500, { ok: false, error: 'Could not send. Please try again in a moment.' });
