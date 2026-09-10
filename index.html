@@ -438,9 +438,9 @@
 
       var apiBody = { name:name, email:email, phone:phone, service:service, message:message, website:website };
       var boxBody = {
-        name:name, email:email, phone:phone, service:service, message:message,
+        Name:name, 'Visitor email':email, Phone:phone, Service:service, Message:message,
         _subject:'New Inkspilled form submission from '+name,
-        _template:'table',
+        _template:'basic',
         _captcha:'false',
         _replyto:email
       };

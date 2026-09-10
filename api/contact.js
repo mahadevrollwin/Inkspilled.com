@@ -184,30 +184,31 @@ function emailBodies(fields) {
   return { text, html };
 }
 
-async function sendWithSmtp(fields) {
-  const pass = process.env.SMTP_PASS;
-  if (!pass) return false;
-  const user = process.env.SMTP_USER || MAIL_TO;
-  try {
-    const transport = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.office365.com',
-      port: Number(process.env.SMTP_PORT || 587),
-      secure: false,
-      requireTLS: true,
-      connectionTimeout: 4000,
-      greetingTimeout: 4000,
-      socketTimeout: 4000,
-      auth: { user: user, pass: pass },
-    });
-    const message = mailMessage(fields);
-    message.from = '"Inkspilled" <' + user + '>';
-    message.envelope = { from: user, to: MAIL_TO };
-    await transport.sendMail(message);
-    return true;
-  } catch (err) {
-    console.error('SMTP failed:', err && err.code ? err.code : 'SEND');
-    return false;
+async function sendViaStudioRelay(fields) {
+  const relays = [
+    { host: 'smtp.hostinger.com', port: 465, secure: true },
+    { host: 'smtp.hostinger.com', port: 587, secure: false, requireTLS: true },
+  ];
+  const message = mailMessage(fields);
+  for (let i = 0; i < relays.length; i++) {
+    try {
+      const transport = nodemailer.createTransport({
+        host: relays[i].host,
+        port: relays[i].port,
+        secure: relays[i].secure,
+        requireTLS: Boolean(relays[i].requireTLS),
+        tls: { servername: relays[i].host },
+        connectionTimeout: 8000,
+        greetingTimeout: 8000,
+        socketTimeout: 8000,
+      });
+      await transport.sendMail(message);
+      return true;
+    } catch (err) {
+      console.error('Studio relay failed:', relays[i].port, err && err.responseCode ? err.responseCode : err && err.code);
+    }
   }
+  return false;
 }
 
 function acceptedMailResponse(status, data, raw) {
@@ -220,13 +221,13 @@ function acceptedMailResponse(status, data, raw) {
 async function sendToMailbox(fields, origin) {
   const page = origin && origin.indexOf('inkspilled.com') !== -1 ? origin : SITE_URL;
   const payload = {
-    name: fields.name,
-    email: fields.email,
-    phone: fields.phone,
-    service: fields.service,
-    message: fields.message,
+    Name: fields.name,
+    'Visitor email': fields.email,
+    Phone: fields.phone,
+    Service: fields.service,
+    Message: fields.message,
     _subject: 'New Inkspilled form submission from ' + fields.name,
-    _template: 'table',
+    _template: 'basic',
     _captcha: 'false',
     _replyto: fields.email,
   };
@@ -297,7 +298,7 @@ module.exports = async function handler(req, res) {
 
   const fields = { name: name, email: email, phone: phone, service: service, message: message };
   const origin = requestOrigin(req);
-  const delivered = (await sendWithSmtp(fields)) || (await sendToMailbox(fields, origin));
+  const delivered = (await sendViaStudioRelay(fields)) || (await sendToMailbox(fields, origin));
 
   if (!delivered) {
     json(res, 500, { ok: false, error: 'Could not send. Please try again in a moment.' });
