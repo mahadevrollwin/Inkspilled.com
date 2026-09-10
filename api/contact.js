@@ -186,14 +186,31 @@ function fromForDomain(domain) {
   return 'Inkspilled <' + local + '@' + domain + '>';
 }
 
+function uniqueAddresses(list) {
+  const seen = {};
+  const out = [];
+  for (let i = 0; i < list.length; i++) {
+    const value = list[i];
+    if (!value || seen[value]) continue;
+    seen[value] = true;
+    out.push(value);
+  }
+  return out;
+}
+
 async function pickFromAddress(apiKey) {
-  if (process.env.RESEND_FROM) return [process.env.RESEND_FROM];
+  const addresses = [];
+  if (process.env.RESEND_FROM) addresses.push(process.env.RESEND_FROM);
 
   const listed = await resendRequest(apiKey, '/domains', { method: 'GET' });
-  const domains = (listed.data && listed.data.data) || [];
-  const verified = domains
+  const payload = listed.data || {};
+  const domains = Array.isArray(payload) ? payload : payload.data || [];
+  const usable = domains
     .filter(function (domain) {
-      return domain && (domain.status === 'verified' || domain.status === 'partially_verified');
+      if (!domain || !domain.name) return false;
+      if (domain.status === 'failed') return false;
+      if (domain.capabilities && domain.capabilities.sending === 'disabled') return false;
+      return true;
     })
     .map(function (domain) {
       return domain.name;
@@ -202,23 +219,30 @@ async function pickFromAddress(apiKey) {
   const preferred = ['inkspilled.com', 'inkspilled.in'];
   const ordered = preferred
     .filter(function (name) {
-      return verified.indexOf(name) !== -1;
+      return usable.indexOf(name) !== -1;
     })
     .concat(
-      verified.filter(function (name) {
+      usable.filter(function (name) {
         return preferred.indexOf(name) === -1;
       })
     );
 
-  if (ordered.length) {
-    return ordered.map(fromForDomain);
+  for (let i = 0; i < ordered.length; i++) {
+    addresses.push(fromForDomain(ordered[i]));
   }
 
-  return ['Inkspilled <hello@inkspilled.com>', 'Inkspilled <navneetsingh@inkspilled.com>'];
+  addresses.push(
+    'Inkspilled <hello@inkspilled.com>',
+    'Inkspilled <navneetsingh@inkspilled.com>',
+    'Inkspilled <navneetsingh@inkspilled.in>',
+    'Inkspilled <onboarding@resend.dev>'
+  );
+
+  return uniqueAddresses(addresses);
 }
 
 async function sendWithResend(fields) {
-  const apiKey = process.env.RESEND_API_KEY;
+  const apiKey = String(process.env.RESEND_API_KEY || '').trim();
   if (!apiKey) {
     console.error('Resend is not configured');
     return false;
