@@ -116,6 +116,7 @@
   .logo{display:block; width:clamp(38px, 5.2vw, 52px); height:auto; flex-shrink:0; object-fit:contain;}
   .wordmark{font-family:inherit; font-weight:700; font-size:clamp(18px,2.8vw,26px); letter-spacing:-.02em; line-height:1;}
   .logo-sent{margin-bottom:16px;}
+  .hero{margin:auto 0;}
 
   h1.head{font-size:clamp(32px,4.2vw,58px); font-weight:800; letter-spacing:-.04em;
     line-height:1.03; color:var(--text);}
@@ -178,8 +179,16 @@
   /* stack only on mobile */
   @media (max-width:768px){
     .row{flex-direction:column;}
-    .left{flex:1 1 auto; min-height:auto;}
-    .right{flex:1 1 auto; min-height:auto; padding-bottom:48px;}
+    .left{display:contents;}
+    .brand{order:1; padding:clamp(28px,4vw,60px) clamp(28px,4vw,60px) 0;}
+    .hero{order:2; margin:28px 0 0; padding:8px clamp(28px,4vw,60px) 0;}
+    .right{order:3; flex:1 1 auto; min-height:auto; width:100%; padding-bottom:24px;}
+    .addr{order:4; margin-top:8px; padding:0 clamp(28px,4vw,60px) 24px;}
+    .addr-card{flex:1 1 100%;}
+    .clocks{flex-wrap:nowrap; gap:14px; justify-content:flex-start; overflow-x:auto; -webkit-overflow-scrolling:touch;}
+    .clock{flex:0 0 auto; white-space:nowrap;}
+    .clock .name{min-width:0;}
+    .drip{display:none;}
   }
   @media (prefers-reduced-motion: reduce){ *{animation:none!important; transition:none!important;} }
 </style>
@@ -213,7 +222,7 @@
         <span class="wordmark">inkspilled</span>
       </a>
 
-      <div style="position:relative;z-index:3;margin:auto 0">
+      <div class="hero" style="position:relative;z-index:3">
         <h1 class="head">Soon, your brand<br>will be <span class="cyc" id="cyc"><span>remembered.</span></span></h1>
         <p class="intro-p">A creative and technology studio building brands that move. The site's on its way — the studio's already open.</p>
         <div class="clocks" id="clocks"></div>
