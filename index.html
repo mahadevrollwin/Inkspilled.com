@@ -132,10 +132,8 @@
   .addr{display:flex; gap:16px; flex-wrap:wrap; color:var(--mute); font-size:12.5px; line-height:1.6;}
   .addr-card{flex:1 1 160px; background:rgba(255,255,255,.6); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
     border:1px solid rgba(0,0,0,.08); border-radius:24px 0 24px 24px; padding:16px 18px;
-    box-shadow:0 30px 80px rgba(0,0,0,.12);}
+    box-shadow:0 30px 80px rgba(0,0,0,.12); color:inherit; text-decoration:none;}
   .addr b{color:var(--text); font-weight:600; display:block; margin-bottom:3px;}
-  .addr-link{display:inline-block; margin-top:8px; color:var(--text); font-weight:600; text-decoration:none;}
-  .addr-link:hover{color:var(--blue);}
   .addr .soon{opacity:.6;}
 
   /* form card */
@@ -222,9 +220,9 @@
       </div>
 
       <div style="position:relative;z-index:3" class="addr">
-        <div class="addr-card"><b>Delhi</b>18, Hauz Khas Village<br>New Delhi · +91 99900 44819<br><a class="addr-link" href="https://inkspilled.in/" target="_blank" rel="noopener">Inkspilled India</a></div>
-        <div class="addr-card"><b>Dubai</b>B-803, Prime Business Center, JVC<br>Dubai, UAE · +971 58 579 9959<br><a class="addr-link" href="https://www.inkspilled.ae/" target="_blank" rel="noopener">Inkspilled Dubai</a></div>
-        <div class="addr-card soon"><b>USA</b>Coming soon.</div>
+        <a class="addr-card" href="https://inkspilled.in/" target="_blank" rel="noopener"><b>Inkspilled India</b>18, Hauz Khas Village<br>New Delhi · +91 99900 44819</a>
+        <a class="addr-card" href="https://www.inkspilled.ae/" target="_blank" rel="noopener"><b>Inkspilled Dubai</b>B-803, Prime Business Center, JVC<br>Dubai, UAE · +971 58 579 9959</a>
+        <a class="addr-card soon" href="https://www.inkspilled.com/" target="_blank" rel="noopener"><b>USA</b>Coming soon.</a>
       </div>
     </div>
 
